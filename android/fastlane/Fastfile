@@ -1,0 +1,73 @@
+# This file contains the fastlane.tools configuration
+# You can find the documentation at https://docs.fastlane.tools
+#
+# For a list of all available actions, check out
+#
+#     https://docs.fastlane.tools/actions
+#
+# For a list of all available plugins, check out
+#
+#     https://docs.fastlane.tools/plugins/available-plugins
+#
+
+# Uncomment the line if you want fastlane to automatically update itself
+# update_fastlane
+
+platform :android do
+
+  before_all do
+    ENV["SLACK_URL"] = "#{ENV['SLACK_HOOK']}"
+  end
+
+  desc "Runs all the tests"
+  lane :test do
+    gradle(task: "test")
+  end
+
+  desc "Submit a build to diawi"
+  lane :beta do
+    gradle(task: "clean")
+      gradle(
+        task: "assemble",
+        build_type: "Release"
+      )
+    diawi( token: "#{ENV['DIAWI_TOKEN']}",
+           file: "#{lane_context[SharedValues::GRADLE_APK_OUTPUT_PATH]}")
+    slack( message: "gem_fastlane ANDROID successfully released! checkout at: #{lane_context[SharedValues::UPLOADED_FILE_LINK_TO_DIAWI]}",
+            slack_url: "#{ENV['SLACK_HOOK']}",
+            channel: "your_channel",  # Optional, by default will post to the default channel configured for the POST URL.
+            success: true,        # Optional, defaults to true.
+            payload: {  # Optional, lets you specify any number of your own Slack attachments.
+              "Build Date" => Time.new.to_s,
+              "Built by" => "Jenkins",
+            },
+            default_payloads: nil # Optional, lets you specify a whitelist of default payloads to include. Pass an empty array to suppress all the default payloads.
+        # Don't add this key, or pass nil, if you want all the default payloads. The available default payloads are: `lane`, `test_result`, `git_branch`, `git_author`, `last_git_commit_message`, `last_git_commit_hash`.  
+    )
+    # sh "your_script.sh"
+    # You can also use other beta testing services here
+  end
+
+  desc "Deploy a new version to the Google Play"
+  lane :deploy do
+    gradle(task: "clean")
+      gradle(
+        task: "assemble",
+        build_type: "Release"
+      )
+    supply(
+        package_name: "com.gem_fastlane",
+        track: "alpha",
+        apk: "./fastlane/gem_fastlane.apk"
+    )
+  end
+
+  error do |lane, exception|
+      slack(
+        # message with short human friendly message
+        message: exception.message,
+        success: false, 
+        # Output containing extended log output
+      )
+  end
+end

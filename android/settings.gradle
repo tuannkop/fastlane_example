@@ -1,0 +1,3 @@
+rootProject.name = 'gem_fastlane'
+
+include ':app'

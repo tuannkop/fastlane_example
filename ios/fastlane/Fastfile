@@ -1,0 +1,109 @@
+# This file contains the fastlane.tools configuration
+# You can find the documentation at https://docs.fastlane.tools
+#
+# For a list of all available actions, check out
+#
+#     https://docs.fastlane.tools/actions
+#
+# For a list of all available plugins, check out
+#
+#     https://docs.fastlane.tools/plugins/available-plugins
+#
+
+# Uncomment the line if you want fastlane to automatically update itself
+# update_fastlane
+
+default_platform(:ios)
+
+platform :ios do
+
+  before_all do
+    ENV["SLACK_URL"] = "#{ENV['SLACK_HOOK']}"
+  end
+
+  desc "Runs all the tests"
+  lane :test do
+    scan(
+      scheme: "gem_fastlane",
+      workspace: "./gem_fastlane.xcworkspace",
+      devices: ["iPhone 6s", "iPad Air"]
+    )
+  end
+
+  desc "Build beta for QA"
+  lane :enterprise do
+  	build_app(scheme: "gem_fastlane",
+            workspace: "./gem_fastlane.xcworkspace",
+            clean: true,
+            include_bitcode: false,
+            silent: "true",
+            export_method: "enterprise",
+            output_directory: "./fastlane",
+            output_name: "gem_fastlane QA",
+            export_options: {              
+              provisioningProfiles: {                 
+              "com.gem.gem_fastlane" => "gem_fastlane Inhouse"
+              },
+              compileBitcode: false,
+              uploadSymbols: false
+            }
+            )
+    diawi( token: "#{ENV['DIAWI_TOKEN']}",
+           file: "#{lane_context[SharedValues::IPA_OUTPUT_PATH]}")
+    slack( message: "gem_fastlane IOS successfully released! checkout at: #{lane_context[SharedValues::UPLOADED_FILE_LINK_TO_DIAWI]}",
+            slack_url: "#{ENV['SLACK_HOOK']}",
+            channel: "gem_fastlane-jenkins-notif",  # Optional, by default will post to the default channel configured for the POST URL.
+            success: true,        # Optional, defaults to true.
+            payload: {  # Optional, lets you specify any number of your own Slack attachments.
+              "Build Date" => Time.new.to_s,
+              "Built by" => "Jenkins",
+              "Version" => "1.0",
+            },
+            default_payloads: nil # Optional, lets you specify a whitelist of default payloads to include. Pass an empty array to suppress all the default payloads.
+        # Don't add this key, or pass nil, if you want all the default payloads. The available default payloads are: `lane`, `test_result`, `git_branch`, `git_author`, `last_git_commit_message`, `last_git_commit_hash`.  
+    )
+   end
+
+  desc "Build release"
+  lane :release do
+    build_app(
+      workspace: "./gem_fastlane.xcworkspace",
+      scheme: "gem_fastlane",
+      clean: true,
+      skip_profile_detection: true,
+      output_name: "gem_fastlane-release.ipa",
+      output_directory: "./fastlane",
+      export_options: {
+        compileBitcode: false,
+        uploadSymbols: false ,
+        method: "app-store",
+        signingStyle: "automatic"
+      }
+    )
+  end
+
+  desc "Deliver to testflight"
+  lane :testflight do
+    pilot
+  end
+
+  desc "Deliver to store"
+  lane :release_store do
+    deliver(
+      ipa: "./gem_fastlane-release.ipa",
+      force: true,
+      skip_metadata: true,
+      skip_screenshots: true
+    )
+  end
+
+  error do |lane, exception|
+      slack(
+        # message with short human friendly message
+        message: exception.message,
+        success: false, 
+        # Output containing extended log output
+      )
+  end
+end
+
